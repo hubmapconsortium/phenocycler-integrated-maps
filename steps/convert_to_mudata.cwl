@@ -4,7 +4,7 @@ label: Annotates each h5ad file with dataset and tissue type, then concatenates
 
 requirements:
   DockerRequirement:
-    dockerPull: sennet/phenocycler-maps
+    dockerPull: hubmap/phenocycler-maps
 baseCommand: /opt/convert_to_mudata.py
 
 inputs:
