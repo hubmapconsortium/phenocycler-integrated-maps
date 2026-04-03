@@ -42,6 +42,24 @@ antibodies_dict = {
 }
 
 
+def find_antibodies_meta(input_dir: Path) -> Optional[Path]:
+    """
+    Looks for metadata files matching the pattern for antibodies in the given UUID directory.
+    """
+    metadata_filename_pattern = re.compile(r".*antibodies\.tsv$")
+    found_files = []
+
+    for filename in listdir(input_dir):
+        if metadata_filename_pattern.match(filename):
+            found_files.append(Path(input_dir) / filename)
+
+    if found_files:
+        return found_files[0]  # Return the first matching file
+    else:
+        logger.warning(f"No antibody file found in {input_dir}")
+        return None
+
+
 def get_analyte_name(antibody_name: str) -> str:
     """
     Strips unnecessary prefixes and suffixes off of antibody name from antibodies.tsv.
@@ -85,45 +103,44 @@ def convert_tissue_code(tissue_code: str) -> str:
     return tissue_name
 
 
-def find_files(directory: Path, pattern: str) -> list:
+def find_files(directory: Path, patterns: list) -> list:
     matched_files = []
     for dirpath_str, dirnames, filenames in walk(directory):
         dirpath = Path(dirpath_str)
         for filename in filenames:
             filepath = dirpath / filename
-            if filepath.match(pattern):
-                matched_files.append(filepath)
+            for pattern in patterns:
+                if filepath.match(pattern):
+                    matched_files.append(filepath)
     return matched_files
 
 
-def find_antibodies_meta(input_dir: Path):
-    metadata_filename_pattern = re.compile(r".*antibodies.*\.tsv$")
-    found_files = []
-    for dirpath, dirnames, filenames in walk(input_dir):
-        for filename in filenames:
-            if metadata_filename_pattern.match(filename):
-                found_files.append(Path(dirpath) / filename)
-
-    if len(found_files) == 0:
-        logger.warning("No antibody.tsv file found")
-        antb_path = None
-    else:
-        antb_path = found_files[0]
-    return [antb_path]
-
-
 def find_files_by_type(directory: Path) -> Tuple:
-    hdf5_pattern = "out.hdf5"
-    cell_count_pattern = "aligned_tissue_0_expr.ome.tiff-cell_channel_total.csv"
-    adjacency_matrix_pattern = "aligned_tissue_0_expr.ome.tiff_AdjacencyMatrix.mtx"
-    adjacency_matrix_labels_pattern = "aligned_tissue_0_expr.ome.tiff_AdjacencyMatrixRowColLabels.txt"
-    cell_centers_pattern = "aligned_tissue_0_expr.ome.tiff-cell_centers.csv"
-    hdf5_files = find_files(directory, hdf5_pattern)
-    cell_count_files = find_files(directory, cell_count_pattern)
-    adjacency_matrix_files = find_files(directory, adjacency_matrix_pattern)
-    adjacency_matrix_labels_files = find_files(directory, adjacency_matrix_labels_pattern)
-    cell_centers_files = find_files(directory, cell_centers_pattern)
-    antb_files = find_antibodies_meta(directory)
+    hdf5_patterns = ["out.hdf5"]
+    cell_count_patterns = [
+        "reg1_stitched_expressions.ome.tiff-cell_channel_total.csv",
+        "reg001_expr.ome.tiff-cell_channel_total.csv",
+    ]
+    adjacency_matrix_patterns = [
+        "reg1_stitched_expressions.ome.tiff_AdjacencyMatrix.mtx",
+        "reg001_expr.ome.tiff_AdjacencyMatrix.mtx",
+    ]
+    adjacency_matrix_labels_patterns = [
+        "reg1_stitched_expressions.ome.tiff_AdjacencyMatrixRowColLabels.txt",
+        "reg001_expr.ome.tiff_AdjacencyMatrixRowColLabels.txt",
+    ]
+    cell_centers_patterns = [
+        "reg1_stitched_expressions.ome.tiff-cell_centers.csv",
+        "reg001_expr.ome.tiff-cell_centers.csv",
+    ]
+
+    hdf5_files = find_files(directory, hdf5_patterns)
+    cell_count_files = find_files(directory, cell_count_patterns)
+    adjacency_matrix_files = find_files(directory, adjacency_matrix_patterns)
+    adjacency_matrix_labels_files = find_files(
+        directory, adjacency_matrix_labels_patterns
+    )
+    cell_centers_files = find_files(directory, cell_centers_patterns)
 
     return (
         hdf5_files,
@@ -131,7 +148,6 @@ def find_files_by_type(directory: Path) -> Tuple:
         adjacency_matrix_files,
         adjacency_matrix_labels_files,
         cell_centers_files,
-        antb_files
     )
 
 
@@ -140,19 +156,19 @@ def create_json(
     data_product_uuid: str,
     creation_time: str,
     uuids: list,
-    sntids: list,
+    hbmids: list,
     cell_count: int,
     file_size: int,
 ):
-    bucket_url = f"https://sn-data-products.s3.amazonaws.com/{data_product_uuid}/"
+    bucket_url = f"https://g-24f5cc.09193a.5898.dn.glob.us/public/hubmap-data-products/{data_product_uuid}"
     metadata = {
-        "Integrated Map UUID": data_product_uuid,
+        "Data Product UUID": data_product_uuid,
         "Tissue": convert_tissue_code(tissue),
-        "Assay": "phenocycler",
-        "Raw URL": bucket_url + f"{tissue}_raw.h5mu",
+        "Assay": "codex",
+        "Raw URL": bucket_url + f"{tissue}.h5mu",
         "Creation Time": creation_time,
         "Dataset UUIDs": uuids,
-        "Dataset SNTIDs": sntids,
+        "Dataset HBMIDs": hbmids,
         "Total Cell Count": cell_count,
         "Raw File Size": file_size,
     }
@@ -170,9 +186,9 @@ def get_column_names(cell_count_file: Path) -> list:
 
 def standardize_antb_df(antibodies_df: pd.DataFrame) -> pd.DataFrame:
     for idx, row in antibodies_df.iterrows():
-        stripped_name = get_analyte_name(antibodies_df.at[idx, "channel_id"])
+        stripped_name = get_analyte_name(antibodies_df.at[idx, "antibody_name"])
         new_name = find_antibody_key(stripped_name)
-        antibodies_df.at[idx, "channel_id"] = new_name
+        antibodies_df.at[idx, "antibody_name"] = new_name
     return antibodies_df
 
 
@@ -186,27 +202,23 @@ def create_varm_dfs(
     uniprot_df = pd.DataFrame(index=adata.var.index, columns=[uuid])
     rrid_df = pd.DataFrame(index=adata.var.index, columns=[uuid])
     antibodies_tsv_id_df = pd.DataFrame(index=adata.var.index, columns=[uuid])
-    hgnc_df = pd.DataFrame(index=adata.var.index, columns=[uuid])
 
     # Fill in the DataFrames with matching values from antibodies_df
     matching_antibodies = antibodies_df[
-        antibodies_df["channel_id"].isin(var_antb_tsv_intersection)
+        antibodies_df["antibody_name"].isin(var_antb_tsv_intersection)
     ]
     for antibody in var_antb_tsv_intersection:
         protein_idx = adata.var.index.get_loc(antibody)
         uniprot_df.iloc[protein_idx, 0] = matching_antibodies.loc[
-            matching_antibodies["channel_id"] == antibody, "uniprot_accession_number"
+            matching_antibodies["antibody_name"] == antibody, "uniprot_accession_number"
         ].values[0]
         rrid_df.iloc[protein_idx, 0] = matching_antibodies.loc[
-            matching_antibodies["channel_id"] == antibody, "antibody_rrid"
+            matching_antibodies["antibody_name"] == antibody, "rr_id"
         ].values[0]
         antibodies_tsv_id_df.iloc[protein_idx, 0] = matching_antibodies.loc[
-            matching_antibodies["channel_id"] == antibody, "channel_id"
+            matching_antibodies["antibody_name"] == antibody, "channel_id"
         ].values[0]
-        hgnc_df.iloc[protein_idx, 0] = matching_antibodies.loc[
-            matching_antibodies["channel_id"] == antibody, "hgnc_symbol"
-        ]
-    return uniprot_df, rrid_df, antibodies_tsv_id_df, hgnc_df
+    return uniprot_df, rrid_df, antibodies_tsv_id_df
 
 
 def create_anndata(
@@ -216,15 +228,17 @@ def create_anndata(
     cell_centers_file: Path,
     cell_count_file: Path,
     data_directory: Path,
-    antibodies_tsv: Path,
 ) -> anndata.AnnData:
     data_set_dir = fspath(hdf5_store.parent.stem)
     parent_uuid = uuids_df.loc[
-        uuids_df["uuid"] == data_set_dir, "ancestors"
+        uuids_df["uuid"] == data_set_dir, "immediate_ancestor_ids"
     ].item()
+    raw_dir = data_directory / parent_uuid
+    antibodies_tsv = find_antibodies_meta(raw_dir)
     tissue_type = tissue_type if tissue_type else get_tissue_type(data_set_dir)
     store = pd.HDFStore(hdf5_store, "r")
-    key = "/total/channel/cell/expr.ome.tiff/0/tissue/aligned"
+    key1 = "/total/channel/cell/expressions.ome.tiff/stitched/reg1"
+    key2 = "/total/channel/cell/expr.ome.tiff/reg001"
 
     # Get channel names
     var_names = get_column_names(cell_count_file)
@@ -234,13 +248,19 @@ def create_anndata(
     if antibodies_tsv:
         antibodies_df = pd.read_csv(antibodies_tsv, sep="\t", dtype=str)
         antibodies_df = standardize_antb_df(antibodies_df)
-        antibodies_tsv_list = antibodies_df["channel_id"].to_list()
+        antibodies_tsv_list = antibodies_df["antibody_name"].to_list()
         var_antb_tsv_intersection = [
             value for value in var_names if value in antibodies_tsv_list
         ]
 
-    matrix = store[key]
-    mean_layer_matrix = store["/meanAll/channel/cell/expr.ome.tiff/0/tissue/aligned"]
+    if key1 in store:
+        matrix = store[key1]
+        mean_layer_matrix = store[
+            "/meanAll/channel/cell/expressions.ome.tiff/stitched/reg1"
+        ]
+    elif key2 in store:
+        matrix = store[key2]
+        mean_layer_matrix = store["/meanAll/channel/cell/expr.ome.tiff/reg001"]
     store.close()
 
     adata = anndata.AnnData(X=matrix, dtype=np.float64)
@@ -266,14 +286,13 @@ def create_anndata(
     ].to_numpy()
 
     if antibodies_tsv and var_antb_tsv_intersection:
-        uniprot_df, rrid_df, antb_tsv_id_df, hgnc_df = create_varm_dfs(
+        uniprot_df, rrid_df, antb_tsv_id_df = create_varm_dfs(
             adata, data_set_dir, antibodies_df, var_antb_tsv_intersection
         )
         # Store these DataFrames in .varm with the dataset UUID as columns
-        adata.varm["uniprot_accession_number"] = uniprot_df
-        adata.varm["antibody_rrid"] = rrid_df
-        adata.varm["channel_id"] = antb_tsv_id_df
-        adata.varm["hgnc_symbol"] = hgnc_df
+        adata.varm["UniprotID"] = uniprot_df
+        adata.varm["RRID"] = rrid_df
+        adata.varm["AntibodiesTsvID"] = antb_tsv_id_df
 
     return adata
 
@@ -283,6 +302,8 @@ def add_patient_metadata(obs, uuids_df):
     merged = merged.set_index(obs.index)
     merged = merged.drop(columns=["Unnamed: 0"])
     merged = merged.fillna(np.nan)
+    merged["age"] = pd.to_numeric(merged["age"])
+    obs = obs.loc[:, ~obs.columns.str.contains("^Unnamed")]
     return merged
 
 
@@ -315,18 +336,24 @@ def create_block_diag_adjacency_matrices(adjacency_matrices):
     return block_diag_matrix.tocsr()
 
 
+def get_processed_uuids(df:pd.DataFrame):
+    print(df["immediate_descendant_ids"])
+    df = df[df["immediate_descendant_ids"].isna()]
+    return df["uuid"].to_list(), df["hubmap_id"].to_list()
+
+
 def main(data_dir: Path, uuids_tsv: Path, tissue: str):
-    raw_output_file_name = f"{tissue}_raw"
+    raw_output_file_name = f"{tissue}_raw.h5mu"
     uuids_df = pd.read_csv(uuids_tsv, sep="\t", dtype=str)
-    uuids_list = uuids_df["uuid"].to_list()
-    sntids_list = uuids_df["sennet_id"].to_list()
     hdf5_files_list = []
     cell_count_files_list = []
     adjacency_matrix_files_list = []
     adjacency_matrix_labels_files_list = []
     cell_centers_files_list = []
-    antb_files_list = []
     directories = [data_dir / Path(uuid) for uuid in uuids_df["uuid"]]
+    processed_uuids, processed_hbmids = get_processed_uuids(uuids_df)
+    print(processed_uuids)
+    print(processed_hbmids)
 
     for directory in directories:
         if len(listdir(directory)) > 1:
@@ -336,14 +363,12 @@ def main(data_dir: Path, uuids_tsv: Path, tissue: str):
                 adjacency_matrix_files,
                 adjacency_matrix_labels_files,
                 cell_centers_files,
-                antb_files,
             ) = find_files_by_type(directory)
             hdf5_files_list.extend(hdf5_files)
             cell_count_files_list.extend(cell_count_files)
             adjacency_matrix_files_list.extend(adjacency_matrix_files)
             adjacency_matrix_labels_files_list.extend(adjacency_matrix_labels_files)
             cell_centers_files_list.extend(cell_centers_files)
-            antb_files_list.extend(antb_files)
 
     # Create the AnnData objects and process adjacency matrices
     adatas = []
@@ -356,17 +381,15 @@ def main(data_dir: Path, uuids_tsv: Path, tissue: str):
         adjacency_file,
         label_file,
         cell_count_file,
-        antb_file
     ) in zip(
         hdf5_files_list,
         cell_centers_files_list,
         adjacency_matrix_files_list,
         adjacency_matrix_labels_files_list,
         cell_count_files_list,
-        antb_files_list
     ):
         adata = create_anndata(
-            hdf5_file, tissue, uuids_df, cell_centers_file, cell_count_file, data_dir, antb_file
+            hdf5_file, tissue, uuids_df, cell_centers_file, cell_count_file, data_dir
         )
         adatas.append(adata)
         # Save the values in .varm
@@ -398,9 +421,9 @@ def main(data_dir: Path, uuids_tsv: Path, tissue: str):
             combined_adata.var.index, fill_value=np.nan
         )
 
-    combined_adata.varm["antibody_rrid"] = varms_dict["antibody_rrid"]
-    combined_adata.varm["uniprot_accession_number"] = varms_dict["uniprot_accession_number"]
-    combined_adata.varm["channel_id"] = varms_dict["channel_id"]
+    combined_adata.varm["RRID"] = varms_dict["RRID"]
+    combined_adata.varm["UniprotID"] = varms_dict["UniprotID"]
+    combined_adata.varm["AntibodiesTsvID"] = varms_dict["AntibodiesTsvID"]
 
     # Add patient metadata to obs
     obs_w_patient_info = add_patient_metadata(combined_adata.obs, uuids_df)
@@ -411,7 +434,7 @@ def main(data_dir: Path, uuids_tsv: Path, tissue: str):
     data_product_uuid = str(uuid.uuid4())
     total_cell_count = combined_adata.obs.shape[0]
     combined_adata.uns["creation_data_time"] = creation_time
-    combined_adata.uns["datasets"] = sntids_list
+    combined_adata.uns["datasets"] = processed_hbmids
     combined_adata.uns["uuid"] = data_product_uuid
     for key in combined_adata.varm.keys():
         combined_adata.varm[key] = combined_adata.varm[key].astype(str)
@@ -427,20 +450,19 @@ def main(data_dir: Path, uuids_tsv: Path, tissue: str):
     combined_adata = combined_adata[:, filtered_var_index].copy()
     combined_adata.obs['object_type'] = 'ftu'
     combined_adata.obs['analyte_class'] = 'Protein'
-    combined_adata.uns['protocol'] = 'https://github.com/sennetconsortium/phenocycler-integrated-maps'
-    combined_adata.write(f"{raw_output_file_name}.h5ad")
+    combined_adata.uns['protocol'] = 'https://github.com/hubmapconsortium/codex-data-products'
     mdata = md.MuData({f"{data_product_uuid}_raw": combined_adata})
     mdata.uns['epic_type'] = 'analyses'
-    mdata.write(f"{raw_output_file_name}.h5mu")
+    mdata.write(raw_output_file_name)
 
     # Save data product metadata
-    file_size = os.path.getsize(f"{raw_output_file_name}.h5mu")
+    file_size = os.path.getsize(raw_output_file_name)
     create_json(
         tissue,
         data_product_uuid,
         creation_time,
-        uuids_list,
-        sntids_list,
+        processed_uuids,
+        processed_hbmids,
         total_cell_count,
         file_size,
     )

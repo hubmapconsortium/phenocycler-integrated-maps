@@ -31,7 +31,7 @@ def main(
     adata = ad.read_h5ad(raw_h5ad_file)
     with open(integrated_map_metadata, "r") as infile:
         metadata = json.load(infile)
-    uuid = metadata["Integrated Map UUID"]
+    uuid = metadata["Data Product UUID"]
 
     # Move .X to the GPU for rsc
     rsc.get.anndata_to_GPU(adata)

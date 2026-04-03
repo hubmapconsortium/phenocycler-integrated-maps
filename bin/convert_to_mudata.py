@@ -16,7 +16,7 @@ def main(processed_h5ad, metadata, tissue=None):
     adata = ad.read_h5ad(processed_h5ad)
     with open(metadata, "r") as infile:
         metadata = json.load(infile)
-    uuid = metadata["Integrated Map UUID"]
+    uuid = metadata["Data Product UUID"]
     mdata = md.MuData({f"{uuid}_processed": adata})
     mdata.uns["epic_type "] = ['analyses', 'annotations']
     print(f"Writing {output_file_name}")
