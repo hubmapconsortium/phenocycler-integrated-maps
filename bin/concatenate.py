@@ -186,9 +186,9 @@ def get_column_names(cell_count_file: Path) -> list:
 
 def standardize_antb_df(antibodies_df: pd.DataFrame) -> pd.DataFrame:
     for idx, row in antibodies_df.iterrows():
-        stripped_name = get_analyte_name(antibodies_df.at[idx, "antibody_name"])
+        stripped_name = get_analyte_name(antibodies_df.at[idx, "channel_id"])
         new_name = find_antibody_key(stripped_name)
-        antibodies_df.at[idx, "antibody_name"] = new_name
+        antibodies_df.at[idx, "channel_id"] = new_name
     return antibodies_df
 
 
@@ -201,25 +201,25 @@ def create_varm_dfs(
     # Create an empty DataFrame for each piece of information with proteins as rows and dataset UUIDs as columns
     uniprot_df = pd.DataFrame(index=adata.var.index, columns=[uuid])
     rrid_df = pd.DataFrame(index=adata.var.index, columns=[uuid])
-    antibodies_tsv_id_df = pd.DataFrame(index=adata.var.index, columns=[uuid])
+    hgnc_symbol_df = pd.DataFrame(index=adata.var.index, columns=[uuid])
+
 
     # Fill in the DataFrames with matching values from antibodies_df
     matching_antibodies = antibodies_df[
-        antibodies_df["antibody_name"].isin(var_antb_tsv_intersection)
+        antibodies_df["channel_id"].isin(var_antb_tsv_intersection)
     ]
     for antibody in var_antb_tsv_intersection:
         protein_idx = adata.var.index.get_loc(antibody)
         uniprot_df.iloc[protein_idx, 0] = matching_antibodies.loc[
-            matching_antibodies["antibody_name"] == antibody, "uniprot_accession_number"
+            matching_antibodies["channel_id"] == antibody, "uniprot_accession_number"
         ].values[0]
         rrid_df.iloc[protein_idx, 0] = matching_antibodies.loc[
-            matching_antibodies["antibody_name"] == antibody, "rr_id"
+            matching_antibodies["channel_id"] == antibody, "antibody_rrid"
         ].values[0]
-        antibodies_tsv_id_df.iloc[protein_idx, 0] = matching_antibodies.loc[
-            matching_antibodies["antibody_name"] == antibody, "channel_id"
-        ].values[0]
-    return uniprot_df, rrid_df, antibodies_tsv_id_df
-
+        hgnc_symbol_df.iloc[protein_idx, 0] = matching_antibodies.loc[
+            matching_antibodies["channel_id"] == antibody, "hgnc_symbol"
+        ]
+    return uniprot_df, rrid_df, hgnc_symbol_df
 
 def create_anndata(
     hdf5_store: Path,
@@ -247,10 +247,8 @@ def create_anndata(
 
     if antibodies_tsv:
         antibodies_df = pd.read_csv(antibodies_tsv, sep="\t", dtype=str)
-        print(antibodies_df)
         antibodies_df = standardize_antb_df(antibodies_df)
-        print(antibodies_df)
-        antibodies_tsv_list = antibodies_df["antibody_name"].to_list()
+        antibodies_tsv_list = antibodies_df["channel_id"].to_list()
         var_antb_tsv_intersection = [
             value for value in var_names if value in antibodies_tsv_list
         ]
@@ -288,13 +286,13 @@ def create_anndata(
     ].to_numpy()
 
     if antibodies_tsv and var_antb_tsv_intersection:
-        uniprot_df, rrid_df, antb_tsv_id_df = create_varm_dfs(
+        uniprot_df, rrid_df, hgnc_df = create_varm_dfs(
             adata, data_set_dir, antibodies_df, var_antb_tsv_intersection
         )
         # Store these DataFrames in .varm with the dataset UUID as columns
-        adata.varm["UniprotID"] = uniprot_df
-        adata.varm["RRID"] = rrid_df
-        adata.varm["AntibodiesTsvID"] = antb_tsv_id_df
+        adata.varm["uniprot_accession-number"] = uniprot_df
+        adata.varm["antibody_rrid"] = rrid_df
+        adata.varm["hgnc_symbol"] = hgnc_df
 
     return adata
 
@@ -344,7 +342,7 @@ def get_processed_uuids(df:pd.DataFrame):
 
 
 def main(data_dir: Path, uuids_tsv: Path, tissue: str):
-    raw_output_file_name = f"{tissue}_raw.h5mu"
+    raw_output_file_name = f"{tissue}_raw"
     uuids_df = pd.read_csv(uuids_tsv, sep="\t", dtype=str)
     hdf5_files_list = []
     cell_count_files_list = []
@@ -420,9 +418,9 @@ def main(data_dir: Path, uuids_tsv: Path, tissue: str):
             combined_adata.var.index, fill_value=np.nan
         )
 
-    combined_adata.varm["RRID"] = varms_dict["RRID"]
-    combined_adata.varm["UniprotID"] = varms_dict["UniprotID"]
-    combined_adata.varm["AntibodiesTsvID"] = varms_dict["AntibodiesTsvID"]
+    combined_adata.varm["antibody_rrid"] = varms_dict["anitbody_rrid"]
+    combined_adata.varm["uniprot_accession_number"] = varms_dict["uniprot_accession_number"]
+    combined_adata.varm["hgnc_symbol"] = varms_dict["hgnc_symbol"]
 
     # Add patient metadata to obs
     obs_w_patient_info = add_patient_metadata(combined_adata.obs, uuids_df)
@@ -449,13 +447,14 @@ def main(data_dir: Path, uuids_tsv: Path, tissue: str):
     combined_adata = combined_adata[:, filtered_var_index].copy()
     combined_adata.obs['object_type'] = 'ftu'
     combined_adata.obs['analyte_class'] = 'Protein'
-    combined_adata.uns['protocol'] = 'https://github.com/hubmapconsortium/codex-data-products'
+    combined_adata.uns['protocol'] = 'https://github.com/hubmapconsortium/phenocycler-data-products'
+    combined_adata.write_h5ad(f"{raw_output_file_name}.h5ad")
     mdata = md.MuData({f"{data_product_uuid}_raw": combined_adata})
     mdata.uns['epic_type'] = 'analyses'
-    mdata.write(raw_output_file_name)
+    mdata.write(f"{raw_output_file_name}.h5mu")
 
     # Save data product metadata
-    file_size = os.path.getsize(raw_output_file_name)
+    file_size = os.path.getsize(f"{raw_output_file_name}.h5mu")
     create_json(
         tissue,
         data_product_uuid,
