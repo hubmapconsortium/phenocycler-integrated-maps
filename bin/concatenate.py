@@ -418,7 +418,7 @@ def main(data_dir: Path, uuids_tsv: Path, tissue: str):
             combined_adata.var.index, fill_value=np.nan
         )
 
-    combined_adata.varm["antibody_rrid"] = varms_dict["anitbody_rrid"]
+    combined_adata.varm["antibody_rrid"] = varms_dict["antibody_rrid"]
     combined_adata.varm["uniprot_accession_number"] = varms_dict["uniprot_accession_number"]
     combined_adata.varm["hgnc_symbol"] = varms_dict["hgnc_symbol"]
 
