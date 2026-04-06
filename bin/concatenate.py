@@ -290,7 +290,7 @@ def create_anndata(
             adata, data_set_dir, antibodies_df, var_antb_tsv_intersection
         )
         # Store these DataFrames in .varm with the dataset UUID as columns
-        adata.varm["uniprot_accession-number"] = uniprot_df
+        adata.varm["uniprot_accession_number"] = uniprot_df
         adata.varm["antibody_rrid"] = rrid_df
         adata.varm["hgnc_symbol"] = hgnc_df
 
