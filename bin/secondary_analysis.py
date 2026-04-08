@@ -5,6 +5,7 @@ from matplotlib import cm
 from pathlib import Path
 
 import anndata as ad
+import gc
 import json
 import matplotlib.pyplot as plt
 import numpy as np
@@ -47,6 +48,7 @@ def main(
     adata.layers["unscaled"] = adata.X.copy()
     rsc.pp.scale(adata, max_value=10)
 
+    gc.collect()
     rsc.pp.neighbors(adata, n_neighbors=50)
     rsc.tl.umap(adata)
 
