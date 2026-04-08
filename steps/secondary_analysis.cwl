@@ -4,7 +4,7 @@ label: Annotates each h5ad file with dataset and tissue type, then concatenates
 
 requirements:
   DockerRequirement:
-    dockerPull: sennet/rsc
+    dockerPull: hubmap/rsc
   DockerGpuRequirement: {}
   EnvVarRequirement:
     envDef:
