@@ -14,6 +14,8 @@ import pandas as pd
 import rapids_singlecell as rsc
 import scanpy as sc
 
+CUDA_LAUNCH_BLOCKING=1
+
 
 def add_cell_counts(integrated_map_metadata, total_cell_count):
     integrated_map_metadata["Processed Total Cell Count"] = total_cell_count
@@ -47,8 +49,6 @@ def main(
     rsc.pp.log1p(adata)
     adata.layers["unscaled"] = adata.X.copy()
     rsc.pp.scale(adata, max_value=10)
-
-    gc.collect()
     rsc.pp.neighbors(adata, n_neighbors=50)
     rsc.tl.umap(adata)
 
