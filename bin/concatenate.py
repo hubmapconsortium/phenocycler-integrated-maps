@@ -42,24 +42,6 @@ antibodies_dict = {
 }
 
 
-def find_antibodies_meta(input_dir: Path) -> Optional[Path]:
-    """
-    Looks for metadata files matching the pattern for antibodies in the given UUID directory.
-    """
-    metadata_filename_pattern = re.compile(r".*antibodies\.tsv$")
-    found_files = []
-
-    for filename in listdir(input_dir):
-        if metadata_filename_pattern.match(filename):
-            found_files.append(Path(input_dir) / filename)
-
-    if found_files:
-        return found_files[0]  # Return the first matching file
-    else:
-        logger.warning(f"No antibody file found in {input_dir}")
-        return None
-
-
 def get_analyte_name(antibody_name: str) -> str:
     """
     Strips unnecessary prefixes and suffixes off of antibody name from antibodies.tsv.
@@ -103,16 +85,31 @@ def convert_tissue_code(tissue_code: str) -> str:
     return tissue_name
 
 
-def find_files(directory: Path, patterns: list) -> list:
+def find_files(directory: Path, pattern: str) -> list:
     matched_files = []
     for dirpath_str, dirnames, filenames in walk(directory):
         dirpath = Path(dirpath_str)
         for filename in filenames:
             filepath = dirpath / filename
-            for pattern in patterns:
-                if filepath.match(pattern):
-                    matched_files.append(filepath)
+            if filepath.match(pattern):
+                matched_files.append(filepath)
     return matched_files
+
+
+def find_antibodies_meta(input_dir: Path):
+    metadata_filename_pattern = re.compile(r".*antibodies.*\.tsv$")
+    found_files = []
+    for dirpath, dirnames, filenames in walk(input_dir):
+        for filename in filenames:
+            if metadata_filename_pattern.match(filename):
+                found_files.append(Path(dirpath) / filename)
+
+    if len(found_files) == 0:
+        logger.warning("No antibody.tsv file found")
+        antb_path = None
+    else:
+        antb_path = found_files[0]
+    return [antb_path]
 
 
 def find_files_by_type(directory: Path) -> Tuple:
@@ -162,10 +159,10 @@ def create_json(
 ):
     bucket_url = f"https://g-24f5cc.09193a.5898.dn.glob.us/public/hubmap-data-products/{data_product_uuid}"
     metadata = {
-        "Data Product UUID": data_product_uuid,
+        "Integrated Map UUID": data_product_uuid,
         "Tissue": convert_tissue_code(tissue),
-        "Assay": "codex",
-        "Raw URL": bucket_url + f"{tissue}.h5mu",
+        "Assay": "phenocycler",
+        "Raw URL": bucket_url + f"{tissue}_raw.h5mu",
         "Creation Time": creation_time,
         "Dataset UUIDs": uuids,
         "Dataset HBMIDs": hbmids,
@@ -201,8 +198,8 @@ def create_varm_dfs(
     # Create an empty DataFrame for each piece of information with proteins as rows and dataset UUIDs as columns
     uniprot_df = pd.DataFrame(index=adata.var.index, columns=[uuid])
     rrid_df = pd.DataFrame(index=adata.var.index, columns=[uuid])
-    hgnc_symbol_df = pd.DataFrame(index=adata.var.index, columns=[uuid])
-
+    antibodies_tsv_id_df = pd.DataFrame(index=adata.var.index, columns=[uuid])
+    hgnc_df = pd.DataFrame(index=adata.var.index, columns=[uuid])
 
     # Fill in the DataFrames with matching values from antibodies_df
     matching_antibodies = antibodies_df[
@@ -216,10 +213,14 @@ def create_varm_dfs(
         rrid_df.iloc[protein_idx, 0] = matching_antibodies.loc[
             matching_antibodies["channel_id"] == antibody, "antibody_rrid"
         ].values[0]
-        hgnc_symbol_df.iloc[protein_idx, 0] = matching_antibodies.loc[
+        antibodies_tsv_id_df.iloc[protein_idx, 0] = matching_antibodies.loc[
+            matching_antibodies["channel_id"] == antibody, "channel_id"
+        ].values[0]
+        hgnc_df.iloc[protein_idx, 0] = matching_antibodies.loc[
             matching_antibodies["channel_id"] == antibody, "hgnc_symbol"
         ]
-    return uniprot_df, rrid_df, hgnc_symbol_df
+    return uniprot_df, rrid_df, antibodies_tsv_id_df, hgnc_df
+
 
 def create_anndata(
     hdf5_store: Path,
@@ -227,14 +228,14 @@ def create_anndata(
     uuids_df: pd.DataFrame,
     cell_centers_file: Path,
     cell_count_file: Path,
+    original_cluster_file: Path,
     data_directory: Path,
+    antibodies_tsv: Path,
 ) -> anndata.AnnData:
     data_set_dir = fspath(hdf5_store.parent.stem)
     parent_uuid = uuids_df.loc[
-        uuids_df["uuid"] == data_set_dir, "immediate_ancestor_ids"
+        uuids_df["uuid"] == data_set_dir, "ancestors"
     ].item()
-    raw_dir = data_directory / parent_uuid
-    antibodies_tsv = find_antibodies_meta(raw_dir)
     tissue_type = tissue_type if tissue_type else get_tissue_type(data_set_dir)
     store = pd.HDFStore(hdf5_store, "r")
     key1 = "/total/channel/cell/expressions.ome.tiff/stitched/reg1"
@@ -252,7 +253,6 @@ def create_anndata(
         var_antb_tsv_intersection = [
             value for value in var_names if value in antibodies_tsv_list
         ]
-        print(antibodies_df)
 
     if key1 in store:
         matrix = store[key1]
@@ -269,6 +269,11 @@ def create_anndata(
     adata.obs["original_obs_id"] = adata.obs.index
     adata.obs["dataset"] = str(data_set_dir)
     adata.obs["tissue"] = tissue_type
+    original_cluster_df = pd.read_csv(original_cluster_file)
+    adata.obs["original_sprm_cluster"] = original_cluster_df.loc[
+        original_cluster_df["ID"], ["K-Means [UMAP_All_Features]"]
+    ]
+    print(adata.obs['original_sprm_cluster'])
 
     # Set index for cell IDs
     cell_ids_list = ["-".join([data_set_dir, cell_id]) for cell_id in adata.obs["original_obs_id"]]
@@ -283,16 +288,17 @@ def create_anndata(
 
     # Create the cell centers matrix and store it in .obsm
     adata.obsm["centers"] = cell_centers_df.loc[
-        cell_centers_df["ID"].astype(str).isin(adata.obs["original_obs_id"].astype(str)), ["x", "y"]
+        cell_centers_df["ID"].astype(int).isin(adata.obs["original_obs_id"].astype(int)), ["x", "y"]
     ].to_numpy()
 
     if antibodies_tsv and var_antb_tsv_intersection:
-        uniprot_df, rrid_df, hgnc_df = create_varm_dfs(
+        uniprot_df, rrid_df, antb_tsv_id_df, hgnc_df = create_varm_dfs(
             adata, data_set_dir, antibodies_df, var_antb_tsv_intersection
         )
         # Store these DataFrames in .varm with the dataset UUID as columns
         adata.varm["uniprot_accession_number"] = uniprot_df
         adata.varm["antibody_rrid"] = rrid_df
+        adata.varm["channel_id"] = antb_tsv_id_df
         adata.varm["hgnc_symbol"] = hgnc_df
 
     return adata
@@ -303,8 +309,6 @@ def add_patient_metadata(obs, uuids_df):
     merged = merged.set_index(obs.index)
     merged = merged.drop(columns=["Unnamed: 0"])
     merged = merged.fillna(np.nan)
-    merged["age"] = pd.to_numeric(merged["age"])
-    obs = obs.loc[:, ~obs.columns.str.contains("^Unnamed")]
     return merged
 
 
@@ -337,21 +341,19 @@ def create_block_diag_adjacency_matrices(adjacency_matrices):
     return block_diag_matrix.tocsr()
 
 
-def get_processed_uuids(df:pd.DataFrame):
-    df = df[df["immediate_descendant_ids"].isna()]
-    return df["uuid"].to_list(), df["hubmap_id"].to_list()
-
-
 def main(data_dir: Path, uuids_tsv: Path, tissue: str):
     raw_output_file_name = f"{tissue}_raw"
     uuids_df = pd.read_csv(uuids_tsv, sep="\t", dtype=str)
+    uuids_list = uuids_df["uuid"].to_list()
+    hbmids_list = uuids_df["hubmap_id"].to_list()
     hdf5_files_list = []
     cell_count_files_list = []
     adjacency_matrix_files_list = []
     adjacency_matrix_labels_files_list = []
     cell_centers_files_list = []
+    original_clusters_files_list = []
+    antb_files_list = []
     directories = [data_dir / Path(uuid) for uuid in uuids_df["uuid"]]
-    processed_uuids, processed_hbmids = get_processed_uuids(uuids_df)
 
     for directory in directories:
         if len(listdir(directory)) > 1:
@@ -361,12 +363,16 @@ def main(data_dir: Path, uuids_tsv: Path, tissue: str):
                 adjacency_matrix_files,
                 adjacency_matrix_labels_files,
                 cell_centers_files,
+                original_clusters_files,
+                antb_files,
             ) = find_files_by_type(directory)
             hdf5_files_list.extend(hdf5_files)
             cell_count_files_list.extend(cell_count_files)
             adjacency_matrix_files_list.extend(adjacency_matrix_files)
             adjacency_matrix_labels_files_list.extend(adjacency_matrix_labels_files)
             cell_centers_files_list.extend(cell_centers_files)
+            original_clusters_files_list.extend(original_clusters_files)
+            antb_files_list.extend(antb_files)
 
     # Create the AnnData objects and process adjacency matrices
     adatas = []
@@ -379,15 +385,19 @@ def main(data_dir: Path, uuids_tsv: Path, tissue: str):
         adjacency_file,
         label_file,
         cell_count_file,
+        original_cluster_file,
+        antb_file,
     ) in zip(
         hdf5_files_list,
         cell_centers_files_list,
         adjacency_matrix_files_list,
         adjacency_matrix_labels_files_list,
         cell_count_files_list,
+        original_clusters_files_list,
+        antb_files_list,
     ):
         adata = create_anndata(
-            hdf5_file, tissue, uuids_df, cell_centers_file, cell_count_file, data_dir
+            hdf5_file, tissue, uuids_df, cell_centers_file, cell_count_file, original_cluster_file, data_dir, antb_file
         )
         adatas.append(adata)
         # Save the values in .varm
@@ -418,12 +428,10 @@ def main(data_dir: Path, uuids_tsv: Path, tissue: str):
         varms_dict[key] = varms_dict[key].reindex(
             combined_adata.var.index, fill_value=np.nan
         )
-    print(combined_adata)
-    print(combined_adata.var)
-    print(varms_dict)
+
     combined_adata.varm["antibody_rrid"] = varms_dict["antibody_rrid"]
     combined_adata.varm["uniprot_accession_number"] = varms_dict["uniprot_accession_number"]
-    combined_adata.varm["hgnc_symbol"] = varms_dict["hgnc_symbol"]
+    combined_adata.varm["channel_id"] = varms_dict["channel_id"]
 
     # Add patient metadata to obs
     obs_w_patient_info = add_patient_metadata(combined_adata.obs, uuids_df)
@@ -434,7 +442,7 @@ def main(data_dir: Path, uuids_tsv: Path, tissue: str):
     data_product_uuid = str(uuid.uuid4())
     total_cell_count = combined_adata.obs.shape[0]
     combined_adata.uns["creation_data_time"] = creation_time
-    combined_adata.uns["datasets"] = processed_hbmids
+    combined_adata.uns["datasets"] = hbmids_list
     combined_adata.uns["uuid"] = data_product_uuid
     for key in combined_adata.varm.keys():
         combined_adata.varm[key] = combined_adata.varm[key].astype(str)
@@ -450,8 +458,8 @@ def main(data_dir: Path, uuids_tsv: Path, tissue: str):
     combined_adata = combined_adata[:, filtered_var_index].copy()
     combined_adata.obs['object_type'] = 'ftu'
     combined_adata.obs['analyte_class'] = 'Protein'
-    combined_adata.uns['protocol'] = 'https://github.com/hubmapconsortium/phenocycler-data-products'
-    combined_adata.write_h5ad(f"{raw_output_file_name}.h5ad")
+    combined_adata.uns['protocol'] = 'https://github.com/hubmapconsortium/phenocycler-integrated-maps'
+    combined_adata.write(f"{raw_output_file_name}.h5ad")
     mdata = md.MuData({f"{data_product_uuid}_raw": combined_adata})
     mdata.uns['epic_type'] = 'analyses'
     mdata.write(f"{raw_output_file_name}.h5mu")
@@ -462,8 +470,8 @@ def main(data_dir: Path, uuids_tsv: Path, tissue: str):
         tissue,
         data_product_uuid,
         creation_time,
-        processed_uuids,
-        processed_hbmids,
+        uuids_list,
+        hbmids_list,
         total_cell_count,
         file_size,
     )
@@ -484,3 +492,4 @@ if __name__ == "__main__":
         manhole.install(activate_on="USR1")
 
     main(args.data_directory, args.uuids_file, args.tissue)
+
