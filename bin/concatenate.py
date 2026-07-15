@@ -252,6 +252,7 @@ def create_anndata(
         var_antb_tsv_intersection = [
             value for value in var_names if value in antibodies_tsv_list
         ]
+        print(antibodies_df)
 
     if key1 in store:
         matrix = store[key1]
@@ -417,6 +418,8 @@ def main(data_dir: Path, uuids_tsv: Path, tissue: str):
         varms_dict[key] = varms_dict[key].reindex(
             combined_adata.var.index, fill_value=np.nan
         )
+    print(combined_adata)
+    print(combined_adata.var)
     print(varms_dict)
     combined_adata.varm["antibody_rrid"] = varms_dict["antibody_rrid"]
     combined_adata.varm["uniprot_accession_number"] = varms_dict["uniprot_accession_number"]
