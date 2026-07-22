@@ -85,14 +85,15 @@ def convert_tissue_code(tissue_code: str) -> str:
     return tissue_name
 
 
-def find_files(directory: Path, pattern: str) -> list:
+def find_files(directory: Path, patterns) -> list:
     matched_files = []
     for dirpath_str, dirnames, filenames in walk(directory):
         dirpath = Path(dirpath_str)
         for filename in filenames:
             filepath = dirpath / filename
-            if filepath.match(pattern):
-                matched_files.append(filepath)
+            for pattern in patterns:
+                if filepath.match(pattern):
+                    matched_files.append(filepath)
     return matched_files
 
 
