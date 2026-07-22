@@ -21,13 +21,11 @@ def find_files(directory, patterns):
 
 def find_file_pairs(directory):
     hdf5_pattern = ["out.hdf5"]
-
-    hdf5_pattern = [Path("out.hdf5")]
-    cell_count_pattern = [Path("reg001_expr.ome.tiff-cell_channel_total.csv")]
-    adjacency_matrix_pattern = [Path("reg001_expr.ome.tiff_AdjacencyMatrix.mtx")]
-    adjacency_matrix_labels_pattern = [Path("reg001_expr.ome.tiff_AdjacencyMatrixRowColLabels.txt")]
-    cell_centers_pattern = [Path("reg001_expr.ome.tiff-cell_centers.csv")]
-    original_cluster_pattern = [Path("reg001_expr.ome.tiff-cell_cluster.csv")]
+    cell_count_pattern = ["reg001_expr.ome.tiff-cell_channel_total.csv"]
+    adjacency_matrix_pattern = ["reg001_expr.ome.tiff_AdjacencyMatrix.mtx"]
+    adjacency_matrix_labels_pattern = ["reg001_expr.ome.tiff_AdjacencyMatrixRowColLabels.txt"]
+    cell_centers_pattern = ["reg001_expr.ome.tiff-cell_centers.csv"]
+    original_cluster_pattern = ["reg001_expr.ome.tiff-cell_cluster.csv"]
 
     hdf5_file = find_files(directory, hdf5_pattern)
     cell_count_file = find_files(directory, cell_count_pattern)
