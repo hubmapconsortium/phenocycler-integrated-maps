@@ -114,31 +114,19 @@ def find_antibodies_meta(input_dir: Path):
 
 
 def find_files_by_type(directory: Path) -> Tuple:
-    hdf5_patterns = ["out.hdf5"]
-    cell_count_patterns = [
-        "reg1_stitched_expressions.ome.tiff-cell_channel_total.csv",
-        "reg001_expr.ome.tiff-cell_channel_total.csv",
-    ]
-    adjacency_matrix_patterns = [
-        "reg1_stitched_expressions.ome.tiff_AdjacencyMatrix.mtx",
-        "reg001_expr.ome.tiff_AdjacencyMatrix.mtx",
-    ]
-    adjacency_matrix_labels_patterns = [
-        "reg1_stitched_expressions.ome.tiff_AdjacencyMatrixRowColLabels.txt",
-        "reg001_expr.ome.tiff_AdjacencyMatrixRowColLabels.txt",
-    ]
-    cell_centers_patterns = [
-        "reg1_stitched_expressions.ome.tiff-cell_centers.csv",
-        "reg001_expr.ome.tiff-cell_centers.csv",
-    ]
-
-    hdf5_files = find_files(directory, hdf5_patterns)
-    cell_count_files = find_files(directory, cell_count_patterns)
-    adjacency_matrix_files = find_files(directory, adjacency_matrix_patterns)
-    adjacency_matrix_labels_files = find_files(
-        directory, adjacency_matrix_labels_patterns
-    )
-    cell_centers_files = find_files(directory, cell_centers_patterns)
+    hdf5_pattern = "out.hdf5"
+    cell_count_pattern = "reg001_expr.ome.tiff-cell_channel_total.csv"
+    adjacency_matrix_pattern = "reg001_expr.ome.tiff_AdjacencyMatrix.mtx"
+    adjacency_matrix_labels_pattern = "reg001_expr.ome.tiff_AdjacencyMatrixRowColLabels.txt"
+    cell_centers_pattern = "reg001_expr.ome.tiff-cell_centers.csv"
+    original_cluster_pattern = "reg001_expr.ome.tiff-cell_cluster.csv"
+    hdf5_files = find_files(directory, hdf5_pattern)
+    cell_count_files = find_files(directory, cell_count_pattern)
+    adjacency_matrix_files = find_files(directory, adjacency_matrix_pattern)
+    adjacency_matrix_labels_files = find_files(directory, adjacency_matrix_labels_pattern)
+    cell_centers_files = find_files(directory, cell_centers_pattern)
+    original_clusters_files = find_files(directory, original_cluster_pattern)
+    antb_files = find_antibodies_meta(directory)
 
     return (
         hdf5_files,
@@ -146,6 +134,8 @@ def find_files_by_type(directory: Path) -> Tuple:
         adjacency_matrix_files,
         adjacency_matrix_labels_files,
         cell_centers_files,
+        original_clusters_files,
+        antb_files
     )
 
 

@@ -22,22 +22,12 @@ def find_files(directory, patterns):
 def find_file_pairs(directory):
     hdf5_pattern = ["out.hdf5"]
 
-    cell_count_pattern = [
-        "reg1_stitched_expressions.ome.tiff-cell_channel_total.csv",
-        "reg001_expr.ome.tiff-cell_channel_total.csv",
-    ]
-    adjacency_matrix_pattern = [
-        "reg1_stitched_expressions.ome.tiff_AdjacencyMatrix.mtx",
-        "reg001_expr.ome.tiff_AdjacencyMatrix.mtx",
-    ]
-    adjacency_matrix_labels_pattern = [
-        "reg1_stitched_expressions.ome.tiff_AdjacencyMatrixRowColLabels.txt",
-        "reg001_expr.ome.tiff_AdjacencyMatrixRowColLabels.txt",
-    ]
-    cell_centers_pattern = [
-        "reg1_stitched_expressions.ome.tiff-cell_centers.csv",
-        "reg001_expr.ome.tiff-cell_centers.csv",
-    ]
+    hdf5_pattern = [Path("out.hdf5")]
+    cell_count_pattern = [Path("reg001_expr.ome.tiff-cell_channel_total.csv")]
+    adjacency_matrix_pattern = [Path("reg001_expr.ome.tiff_AdjacencyMatrix.mtx")]
+    adjacency_matrix_labels_pattern = [Path("reg001_expr.ome.tiff_AdjacencyMatrixRowColLabels.txt")]
+    cell_centers_pattern = [Path("reg001_expr.ome.tiff-cell_centers.csv")]
+    original_cluster_pattern = [Path("reg001_expr.ome.tiff-cell_cluster.csv")]
 
     hdf5_file = find_files(directory, hdf5_pattern)
     cell_count_file = find_files(directory, cell_count_pattern)
@@ -46,6 +36,7 @@ def find_file_pairs(directory):
         directory, adjacency_matrix_labels_pattern
     )
     cell_centers_file = find_files(directory, cell_centers_pattern)
+    original_clusters_file = find_files(directory, original_cluster_pattern)
 
     return (
         hdf5_file,
@@ -53,6 +44,7 @@ def find_file_pairs(directory):
         adjacency_matrix_file,
         adjacency_matrix_labels_file,
         cell_centers_file,
+        original_clusters_file,
     )
 
 
@@ -109,13 +101,10 @@ def find_processed_files(uuids_df, files_base_directory, data_directory):
 
 
 def main(data_directory: Path, uuids_file: Path, tissue: str):
-    uuids_df = pd.read_csv(uuids_file, sep="\t")
-    uuids_df = uuids_df.dropna(subset=["uuid"])  # Ensure UUIDs are valid
-
+    df = pd.read_csv(uuids_file, sep = "\t")
     files_base_directory = Path(f"{tissue}_files")
     files_base_directory.mkdir(exist_ok=True)
-
-    find_processed_files(uuids_df, files_base_directory, data_directory)
+    find_processed_files(df, files_base_directory, data_directory)
 
 
 if __name__ == "__main__":
