@@ -97,7 +97,7 @@ def find_files(directory: Path, pattern) -> list:
 
 
 def find_antibodies_meta(input_dir: Path):
-    metadata_filename_pattern = re.compile(r".*antibodies.*\.tsv$")
+    metadata_filename_pattern = "antibodies.tsv"
     found_files = []
     for dirpath, dirnames, filenames in walk(input_dir):
         for filename in filenames:
@@ -209,10 +209,6 @@ def create_varm_dfs(
         hgnc_df.iloc[protein_idx, 0] = matching_antibodies.loc[
             matching_antibodies["channel_id"] == antibody, "hgnc_symbol"
         ]
-        print(uniprot_df)
-        print(rrid_df)
-        print(antibodies_tsv_id_df)
-        print(hgnc_df)
     return uniprot_df, rrid_df, antibodies_tsv_id_df, hgnc_df
 
 
@@ -292,6 +288,7 @@ def create_anndata(
         adata.varm["antibody_rrid"] = rrid_df
         adata.varm["channel_id"] = antb_tsv_id_df
         adata.varm["hgnc_symbol"] = hgnc_df
+        print(adata.varm)
 
     return adata
 
