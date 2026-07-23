@@ -190,7 +190,7 @@ def create_varm_dfs(
     rrid_df = pd.DataFrame(index=adata.var.index, columns=[uuid])
     antibodies_tsv_id_df = pd.DataFrame(index=adata.var.index, columns=[uuid])
     hgnc_df = pd.DataFrame(index=adata.var.index, columns=[uuid])
-
+    print(antibodies_df)
     # Fill in the DataFrames with matching values from antibodies_df
     matching_antibodies = antibodies_df[
         antibodies_df["channel_id"].isin(var_antb_tsv_intersection)
@@ -209,6 +209,10 @@ def create_varm_dfs(
         hgnc_df.iloc[protein_idx, 0] = matching_antibodies.loc[
             matching_antibodies["channel_id"] == antibody, "hgnc_symbol"
         ]
+        print(uniprot_df)
+        print(rrid_df)
+        print(antibodies_tsv_id_df)
+        print(hgnc_df)
     return uniprot_df, rrid_df, antibodies_tsv_id_df, hgnc_df
 
 
@@ -416,6 +420,7 @@ def main(data_dir: Path, uuids_tsv: Path, tissue: str):
         varms_dict[key] = varms_dict[key].reindex(
             combined_adata.var.index, fill_value=np.nan
         )
+    print(varms_dict)
 
     combined_adata.varm["antibody_rrid"] = varms_dict["antibody_rrid"]
     combined_adata.varm["uniprot_accession_number"] = varms_dict["uniprot_accession_number"]
